@@ -1,14 +1,36 @@
+@using BTCPayServer.Contracts
 @model BTCPayServer.Controllers.ServerController.ListPluginsViewModel 
 @{
     ViewData.SetActivePageAndTitle(ServerNavPages.Plugins);
     var installed = Model.Installed.ToDictionary(plugin => plugin.Identifier.ToLowerInvariant(), plugin => plugin.Version);
     var availableAndNotInstalled = Model.Available.Where(plugin => !installed.Keys.Contains(plugin.Identifier.ToLowerInvariant()));
 
-    bool DependencyMet(string dependency)
+    bool DependentOn(string plugin)
     {
-        var splits = dependency.Split(":", StringSplitOptions.RemoveEmptyEntries);
-        var plugin = (splits.Length == 2 ? splits[0] : splits[1]).ToLowerInvariant();
-        var versionReq = splits.Last();
+        foreach (var installedPlugin in Model.Installed)
+        {
+            if (installedPlugin.Dependencies.Any(dep => dep.Identifier.Equals(plugin, StringComparison.InvariantCultureIgnoreCase)))
+            {
+                return true;
+            }
+        }
+
+        var pendingInstalls = Model.Commands.Where(tuple => tuple.command != "uninstall").Select(tuple => tuple.plugin).Distinct();
+        foreach (var pendingInstall in pendingInstalls)
+        {
+            if (Model.Available.Any(availablePlugin => availablePlugin.Identifier.Equals(pendingInstall, StringComparison.InvariantCultureIgnoreCase) &&
+                                                       availablePlugin.Dependencies.Any(dep => dep.Identifier.Equals(plugin, StringComparison.InvariantCultureIgnoreCase))))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool DependencyMet(IBTCPayServerPlugin.PluginDependency dependency)
+    {
+        var plugin = dependency.Identifier.ToLowerInvariant();
+        var versionReq = dependency.Condition;
         if (!installed.ContainsKey(plugin) && !versionReq.Equals("!"))
         {
             return false;
@@ -51,7 +73,7 @@
         });
     }
 
-    bool DependenciesMet(string[] dependencies)
+    bool DependenciesMet(IBTCPayServerPlugin.PluginDependency[] dependencies)
     {
         foreach (var dependency in dependencies)
         {
@@ -94,7 +116,7 @@
                     <div class="card-body">
                         <div class="row">
                             <div class="col-xs-12 col-md-6">
-                                <h4 class="card-title" title="@plugin.Identifier">@plugin.Name</h4>
+                                <h4 class="card-title" title="@plugin.Identifier" data-toggle="tooltip" >@plugin.Name</h4>
                                 <h5 class="card-subtitle mb-3 text-muted d-flex align-items-center">
 
                                     @plugin.Version
@@ -136,7 +158,7 @@
                                                 @dependency
                                                 @if (!DependencyMet(dependency))
                                                 {
-                                                    <span title="Dependency not met." class="fa fa-warning text-danger"></span>
+                                                    <span title="Dependency not met." data-toggle="tooltip"  class="fa fa-warning text-danger"></span>
                                                 }
                                             </li>
                                         }
@@ -159,7 +181,7 @@
                                                     @dependency
                                                     @if (!DependencyMet(dependency))
                                                     {
-                                                        <span title="Dependency not met." class="fa fa-warning text-danger"></span>
+                                                        <span title="Dependency not met." data-toggle="tooltip"  class="fa fa-warning text-danger"></span>
                                                     }
                                                 </li>
                                             }
@@ -189,9 +211,17 @@
                                         <button type="submit" class="btn btn-secondary">Update</button>
                                     </form>
                                 }
-                                <form asp-action="UnInstallPlugin" asp-route-plugin="@plugin.Identifier">
-                                    <button type="submit" class="btn btn-outline-danger">Uninstall</button>
-                                </form>
+                                @if (DependentOn(plugin.Identifier))
+                                {
+                                    <button type="button" class="btn btn-outline-danger" data-toggle="tooltip"  title="This plugin cannot be uninstalled as it is depended on by other plugins.">Uninstall <span class="fa fa-exclamation"></span></button>
+                                }
+                                else
+                                {
+                                    <form asp-action="UnInstallPlugin" asp-route-plugin="@plugin.Identifier">
+                                        <button type="submit" class="btn btn-outline-danger">Uninstall</button>
+                                    </form>
+                                }
+                                
                             }
                         </div>
                     }
@@ -209,7 +239,7 @@
             <div class="col col-12 col-lg-6 mb-4">
                 <div class="card h-100">
                     <div class="card-body">
-                        <h4 class="card-title" title="@plugin.Identifier">@plugin.Name</h4>
+                        <h4 class="card-title" data-toggle="tooltip"  title="@plugin.Identifier">@plugin.Name</h4>
                         <h5 class="card-subtitle mb-3 text-muted">@plugin.Version</h5>
                         <p class="card-text">@plugin.Description</p>
                         @if (plugin.Dependencies?.Any() is true)
@@ -223,7 +253,7 @@
                                         @dependency
                                         @if (!DependencyMet(dependency))
                                         {
-                                            <span title="Dependency not met." class="fa fa-warning text-danger"></span>
+                                            <span title="Dependency not met." data-toggle="tooltip"  class="fa fa-warning text-danger"></span>
                                         }
                                     </li>
                                 }
